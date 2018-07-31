@@ -2,6 +2,9 @@ package BLC
 
 import (
 	"time"
+	"bytes"
+	"encoding/gob"
+	"log"
 )
 
 
@@ -43,7 +46,29 @@ func NewBlock(height uint64,data []byte, preHash []byte) *Block  {
 	block.Nonce = nonce
 	return block
 
-
-
 }
 
+
+// 序列化block对象 返回[]byte
+func (block *Block)Serialize() []byte  {
+
+	var buffer bytes.Buffer
+	encoder := gob.NewEncoder(&buffer)
+	err := encoder.Encode(block)
+	if err != nil {
+		log.Panic(err)
+	}
+	return buffer.Bytes()
+}
+
+// 反序列化
+func DeserializeBlock(blockBytes []byte) *Block  {
+	var block Block
+	reader := bytes.NewReader(blockBytes)
+	decoder := gob.NewDecoder(reader)
+	err := decoder.Decode(&block)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &block
+}
