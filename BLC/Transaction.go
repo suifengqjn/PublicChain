@@ -33,7 +33,7 @@ type Transaction struct {
 
 func NewCoinBaseTransaction(address string) *Transaction {
 	txInput := &TxInput{[]byte{}, -1, "Genesis Data"}
-	txOutput := &TxOutput{10, address}
+	txOutput := &TxOutput{CoinbaseReward, address}
 	txCoinBaseTransaction := &Transaction{[]byte{}, []*TxInput{txInput}, []*TxOutput{txOutput}}
 	//设置交易ID
 	txCoinBaseTransaction.SetID()
@@ -56,20 +56,21 @@ func (tx *Transaction) SetID() {
 }
 
 //根据转账的信息，创建一个普通的交易
-func NewSimpleTransaction(from, to string, amount int64) *Transaction {
+func NewSimpleTransaction(from, to string, amount int64, bc *BlockChain) *Transaction {
 	//1.定义Input和Output的数组
 	var txInputs []*TxInput
 	var txOuputs [] *TxOutput
 
-	//2.创建Input
-	/*
-	创世区块中交易ID：c16d3ad93450cd532dcd7ef53d8f396e46b2e59aa853ad44c284314c7b9db1b4
-	 */
+	//2.//获取本次转账要使用output
+	balance, spendUtxo := bc.FindSpentAbleUTXos(from, amount)
 
-	//idBytes, _ := hex.DecodeString("c16d3ad93450cd532dcd7ef53d8f396e46b2e59aa853ad44c284314c7b9db1b4")
-	idBytes, _ := hex.DecodeString("143d7db0d5cce24645edb2ba0b503fe15969ade0c721edfd3578cd731c563a16")
-	txInput := &TxInput{idBytes, 1, from}
-	txInputs = append(txInputs, txInput)
+	for txID, indexArray := range spendUtxo {
+		txIdBytes,_ := hex.DecodeString(txID)
+		for _, index :=  range indexArray  {
+			txinput := &TxInput{txIdBytes, index, from}
+			txInputs = append(txInputs, txinput)
+		}
+	}
 
 	//3.创建Output
 
@@ -78,9 +79,8 @@ func NewSimpleTransaction(from, to string, amount int64) *Transaction {
 	txOuputs = append(txOuputs, txOutput)
 
 	//找零
-	txOutput2 := &TxOutput{6 - amount, from}
+	txOutput2 := &TxOutput{balance - amount, from}
 	txOuputs = append(txOuputs, txOutput2)
-
 	//创建交易
 	tx := &Transaction{[]byte{}, txInputs, txOuputs}
 

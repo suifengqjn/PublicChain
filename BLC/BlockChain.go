@@ -277,7 +277,7 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 
 	//amount[0]-->int
 	amountInt, _ := strconv.ParseInt(amount[0], 10, 64)
-	tx := NewSimpleTransaction(from[0], to[0], amountInt)
+	tx := NewSimpleTransaction(from[0], to[0], amountInt, bc)
 	txs = append(txs, tx)
 
 	//2.新建区块
@@ -319,10 +319,10 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 
 //提供一个功能：查询余额
 func (bc *BlockChain) GetBalance(address string) int64 {
-	txOutputs := bc.UnSpent(address)
+	unSpendUTXOs := bc.UnSpent(address)
 	var total int64
-	for _, txOutput := range txOutputs {
-		total += txOutput.Value
+	for _, utxo := range unSpendUTXOs {
+		total += utxo.Output.Value
 	}
 	return total
 
@@ -333,7 +333,7 @@ func (bc *BlockChain) GetBalance(address string) int64 {
 UTXO模型：未花费的交易输出
 	Unspent Transaction TxOutput
  */
-func (bc *BlockChain) UnSpent(address string) []*TxOutput {//王二狗
+func (bc *BlockChain) UnSpent(address string) []*UTXO {//王二狗
 	/*
 	1.遍历数据库，获取每个block--->Txs
 	2.遍历所有交易：
@@ -341,7 +341,7 @@ func (bc *BlockChain) UnSpent(address string) []*TxOutput {//王二狗
 		Outputs,---->每个output
 	 */
 	//存储未花费的TxOutput
-	var unSpentTxOutput [] *TxOutput
+	var unSpentUTXOs []*UTXO
 	//存储已经花费的信息
 	spentTxOutputMap := make(map[string][]int) // map[TxID] = []int{vout}
 
@@ -387,12 +387,15 @@ func (bc *BlockChain) UnSpent(address string) []*TxOutput {//王二狗
 						}
 
 						if !isSpentOutput {
-							unSpentTxOutput = append(unSpentTxOutput, txOutput)
+							//根据未花费的output，创建utxo对象
+							utxo := &UTXO{tx.TxID,index, txOutput}
+							unSpentUTXOs = append(unSpentUTXOs, utxo)
 						}
 
 					} else {
 						//如果map长度未0,证明还没有花费记录，output无需判断
-						unSpentTxOutput = append(unSpentTxOutput, txOutput)
+						utxo := &UTXO{tx.TxID,index, txOutput}
+						unSpentUTXOs = append(unSpentUTXOs, utxo)
 					}
 				}
 			}
@@ -408,11 +411,37 @@ func (bc *BlockChain) UnSpent(address string) []*TxOutput {//王二狗
 
 	}
 
-	return unSpentTxOutput
+	return unSpentUTXOs
 }
 
 
+//用于一次转账的交易中，可以使用的utxo
+func (bc *BlockChain) FindSpentAbleUTXos(from string, amount int64) (int64, map[string][]int)  {
+	/*
+ 	1.根据from获取到的所有的utxo
+ 	2.遍历utxos，累加余额，判断，是否如果余额，大于等于要要转账的金额，
 
+
+ 	返回：map[txID] -->[]int{下标1，下标2} --->Output
+ 	 */
+
+ 	 var balance int64
+ 	 spentAbleMap := make(map[string][]int)
+ 	 utxos := bc.UnSpent(from)
+ 	 for _, utxo := range utxos {
+ 	 	balance += utxo.Output.Value
+ 	 	txIDStr := hex.EncodeToString(utxo.TxID)
+ 	 	spentAbleMap[txIDStr] = append(spentAbleMap[txIDStr], utxo.Index)
+		 if balance >= amount {
+
+		 }
+	}
+	if balance < amount {
+		 fmt.Println(from, "余额不足")
+		 os.Exit(1)
+	}
+	return balance, spentAbleMap
+}
 
 
 
