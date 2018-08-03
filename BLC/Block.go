@@ -41,7 +41,6 @@ func NewBlock(height uint64,txs []*Transaction, preHash []byte) *Block  {
 		Txs:txs,
 		TimeStamp:uint64(time.Now().Unix()),
 	}
-
 	pow := NewProofOfWork(block)
 	hash,nonce := pow.Run()
 	block.Hash = hash

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 	"ketang/publicChain/BC/utils"
+	"strconv"
 )
 type CLI struct {
 	//BlockChain *BlockChain
@@ -16,6 +17,7 @@ func  (cli *CLI) Run()  {
 	// 校验输入参数
 	isValidArgs()
 	//1.创建flagset命令对象
+	createWalletCmd:=flag.NewFlagSet("createwallet",flag.ExitOnError)
 	createBlockChainCmd := flag.NewFlagSet("createblockchain", flag.ExitOnError)
 	sendCmd := flag.NewFlagSet("send",flag.ExitOnError)
 	printChainCmd := flag.NewFlagSet("printchain", flag.ExitOnError)
@@ -50,6 +52,11 @@ func  (cli *CLI) Run()  {
 		if err != nil {
 			log.Panic(err)
 		}
+	case "createwallet":
+		err := createWalletCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
 
 	default:
 		printUsage()
@@ -69,7 +76,17 @@ func  (cli *CLI) Run()  {
 		from := utils.JSONToArray(*flagSendFromData)     //[]string
 		to := utils.JSONToArray(*flagSendToData)         //[]string
 		amount := utils.JSONToArray(*flagSendAmountData) //[]string
-
+		for i:=0;i<len(from);i++{
+			if !IsValidAddress([]byte(from[i])) || !IsValidAddress([]byte(to[i])){
+				fmt.Println("地址无效，无法转账。。")
+				printUsage()
+				os.Exit(1)
+			}
+			if a,_:=strconv.Atoi(amount[i]);a<=0 {
+				fmt.Println("金额无效。")
+				os.Exit(1)
+			}
+		}
 		cli.Send(from, to, amount)
 	}
 
@@ -82,7 +99,7 @@ func  (cli *CLI) Run()  {
 
 	//添加创世区块的创建
 	if createBlockChainCmd.Parsed() {
-		if *flagcreateBlockChainData == "" {
+		if !IsValidAddress([]byte(*flagcreateBlockChainData)) {
 			printUsage()
 			os.Exit(1)
 		}
@@ -90,12 +107,15 @@ func  (cli *CLI) Run()  {
 	}
 
 	if getBalanceCmd.Parsed() {
-		if *flagGetBalanceData == "" {
+		if  !IsValidAddress([]byte(*flagGetBalanceData)) {
 			fmt.Println("查询地址有误。。")
 			printUsage()
 			os.Exit(1)
 		}
 		cli.GetBalance(*flagGetBalanceData)
+	}
+	if createWalletCmd.Parsed() {
+		cli.CreateWallet()
 	}
 
 }
@@ -116,40 +136,11 @@ func isValidArgs()  {
 }
 
 
-func (cli *CLI) PrintChains(){
-	//cli.BlockChain.PrintChains()
-	bc:=GetBlockChainObject()
-	if bc == nil{
-		fmt.Println("没有BlockChain，无法打印任何数据。。")
-		os.Exit(1)
-	}
-	bc.PrintChains()
-}
 
 
-func (cli *CLI) CreateBlockChain(address string) {
-	//fmt.Println("创世区块。。。")
-	CreateBlockChainWithGenesisBlock(address)
 
-}
 
-func (cli *CLI) Send(from, to, amount []string) {
-	bc := GetBlockChainObject()
-	if bc == nil {
-		fmt.Println("没有BlockChain，无法转账。。")
-		os.Exit(1)
-	}
-	defer bc.DB.Close()
-	bc.MineNewBlock(from, to, amount)
-}
 
-func (cli *CLI) GetBalance(address string) {
-	bc := GetBlockChainObject()
-	if bc == nil {
-		fmt.Println("没有BlockChain，无法查询。。")
-		os.Exit(1)
-	}
-	defer bc.DB.Close()
-	total := bc.GetBalance(address)
-	fmt.Printf("%s,余额是：%d\n", address, total)
-}
+
+
+
