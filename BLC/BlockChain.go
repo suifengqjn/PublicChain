@@ -9,6 +9,8 @@ import (
 	"time"
 	"encoding/hex"
 	"strconv"
+	"bytes"
+	"crypto/ecdsa"
 )
 
 
@@ -47,6 +49,7 @@ func CreateBlockChainWithGenesisBlock(address string) {
 	if err != nil {
 		log.Panic(err)
 	}
+	fmt.Println(txCoinbase.Vouts)
 	err = db.Update(func(tx *bolt.Tx) error {
 		//创世区块序列化后，存入到数据库中
 		b, err := tx.CreateBucketIfNotExists([]byte(BlockBucketName))
@@ -147,12 +150,13 @@ func (bc *BlockChain) PrintChains() {
 			for _, in := range tx.Vins { //每一个TxInput：Txid，vout，解锁脚本
 				fmt.Printf("\t\t\tTxID:%x\n", in.TxID)
 				fmt.Printf("\t\t\tVout:%d\n", in.Vout)
-				fmt.Printf("\t\t\tScriptSiq:%s\n", in.ScriptSiq)
+				fmt.Printf("\t\t\tSignature:%s\n", in.Signature)
+				fmt.Printf("\t\t\tPublicKey:%s\n", in.PublicKey)
 			}
 			fmt.Println("\t\tVouts:")
 			for _, out := range tx.Vouts { //每个以txOutput:value,锁定脚本
 				fmt.Printf("\t\t\tValue:%d\n", out.Value)
-				fmt.Printf("\t\t\tScriptPubKey:%s\n", out.ScriptPubKey)
+				fmt.Printf("\t\t\tPubKeyHash:%s\n", out.PubKeyHash)
 			}
 		}
 		fmt.Printf("\t随机数：%d\n", block.Nonce)
@@ -247,6 +251,13 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 		txs = append(txs, tx)
 	}
 
+	//验证交易
+	for _,tx:=range txs{
+		if bc.VerifityTransaction(tx) == false{
+			log.Panic("数字签名验证失败。。。")
+		}
+
+	}
 
 	//2.新建区块
 	newBlock := new(Block)
@@ -348,7 +359,7 @@ func caculate(tx *Transaction,address string, spentTxOutputMap map[string][]int,
 	if !tx.IsCoinBaseTransaction() { //tx不是CoinBase交易，遍历TxInput
 		for _, txInput := range tx.Vins {
 			//txInput-->TxInput
-			if txInput.UnlockWithAddress(address) {
+			if txInput.UnlockWithAddress([]byte(address)) {
 				//txInput的解锁脚本(用户名) 如果和钥查询的余额的用户名相同，
 				key := hex.EncodeToString(txInput.TxID)
 				spentTxOutputMap[key] = append(spentTxOutputMap[key], txInput.Vout)
@@ -426,5 +437,60 @@ func (bc *BlockChain) FindSpentAbleUTXos(from string, amount int64, txs []*Trans
 	return balance, spentAbleMap
 }
 
+//签名：
+func (bc *BlockChain) SignTrasanction(tx *Transaction,privateKey ecdsa.PrivateKey){
+	//1.判断要签名的tx，如果时coninbase交易直接返回
+	if tx.IsCoinBaseTransaction(){
+		return
+	}
 
+	//2.获取该tx中的Input，引用之前的transaction中的未花费的output，
+	prevTxs:=make(map[string]*Transaction)
+	for _,input:=range tx.Vins{
+		txIDStr:=hex.EncodeToString(input.TxID)
+		prevTxs[txIDStr] = bc.FindTransactionByTxID(input.TxID)
+	}
+
+	//3.签名
+	tx.Sign(privateKey,prevTxs)
+
+}
+
+//根据交易ID，获取对应的交易对象
+func (bc *BlockChain) FindTransactionByTxID(txID []byte) *Transaction{
+	//遍历数据库，获取blcok--->transaction
+	iterator:=bc.Iterator()
+	for{
+		block :=iterator.Next()
+		for _,tx:=range block.Txs{
+			if bytes.Compare(tx.TxID, txID) ==0{
+				return tx
+			}
+		}
+
+		//判断结束循环
+		bigInt :=new(big.Int)
+		bigInt.SetBytes(block.PrevBlockHash)
+		if big.NewInt(0).Cmp(bigInt) == 0{
+			break
+		}
+	}
+
+	return &Transaction{}
+}
+
+
+
+//验证交易的数字签名
+func (bc *BlockChain) VerifityTransaction(tx *Transaction) bool{
+	//要想验证数字签名：私钥+数据 (tx的副本+之前的交易)
+	prevTxs:=make(map[string]*Transaction)
+	for _,input:=range tx.Vins{
+		prevTx:=bc.FindTransactionByTxID(input.TxID)
+		prevTxs[hex.EncodeToString(input.TxID)] = prevTx
+	}
+
+	//验证
+	return  tx.Verifity(prevTxs)
+}
 

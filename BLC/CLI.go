@@ -18,6 +18,7 @@ func  (cli *CLI) Run()  {
 	isValidArgs()
 	//1.创建flagset命令对象
 	createWalletCmd:=flag.NewFlagSet("createwallet",flag.ExitOnError)
+	getAddresslistsCmd:=flag.NewFlagSet("getaddresslists",flag.ExitOnError)
 	createBlockChainCmd := flag.NewFlagSet("createblockchain", flag.ExitOnError)
 	sendCmd := flag.NewFlagSet("send",flag.ExitOnError)
 	printChainCmd := flag.NewFlagSet("printchain", flag.ExitOnError)
@@ -54,6 +55,11 @@ func  (cli *CLI) Run()  {
 		}
 	case "createwallet":
 		err := createWalletCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
+	case "getaddresslists":
+		err := getAddresslistsCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Panic(err)
 		}
@@ -117,11 +123,16 @@ func  (cli *CLI) Run()  {
 	if createWalletCmd.Parsed() {
 		cli.CreateWallet()
 	}
+	if getAddresslistsCmd.Parsed(){
+		cli.GetAddressLists()
+	}
 
 }
 
 func printUsage()  {
 	fmt.Println("Usage:")
+	fmt.Println("\t createwallet -- 创建钱包")
+	fmt.Println("\t getaddresslists -- 获取所有的钱包地址")
 	fmt.Println("\t createblockchain -address DATA -- 创建创世区块")
 	fmt.Println("\t send -from From -to To -amount Amount -- 转账交易")
 	fmt.Println("\t printchain -- 打印区块")

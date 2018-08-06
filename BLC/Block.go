@@ -31,7 +31,7 @@ type Block struct{
 
 //创建一个区块链，包含一个创世区块
 func CreateGenesisBlock(txs []*Transaction) *Block  {
-	return NewBlock(0,txs,[]byte{})
+	return NewBlock(0,txs,make([]byte,32,32))
 }
 
 func NewBlock(height uint64,txs []*Transaction, preHash []byte) *Block  {
