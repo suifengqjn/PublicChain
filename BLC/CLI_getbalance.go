@@ -12,6 +12,6 @@ func (cli *CLI) GetBalance(address string) {
 		os.Exit(1)
 	}
 	defer bc.DB.Close()
-	total := bc.GetBalance(address)
+	total := bc.GetBalance(address,[]*Transaction{})
 	fmt.Printf("%s,余额是：%d\n", address, total)
 }

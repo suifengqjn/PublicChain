@@ -1,34 +1,26 @@
 package BLC
 
 import (
-	"encoding/hex"
 	"bytes"
 	"encoding/gob"
 	"log"
 	"crypto/sha256"
-	"math/big"
+	"encoding/hex"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/elliptic"
-	"fmt"
+	"math/big"
 )
 
-//UTXO 模型
-/*
-UTXO分为两部分 input 和 output
-input：币从哪里来（系统产生，或者发起转账者）
-output：币到哪里去
-*/
+//定义交易的数据
 type Transaction struct {
-	//交易id -->每一笔交易的hash
+	//1.交易ID-->就是交易的Hash
 	TxID []byte
-	//输入
+	//2.输入
 	Vins []*TxInput
-
-	//输出
+	//3.输出
 	Vouts []*TxOutput
 }
-
 
 /*
 交易：
@@ -37,7 +29,7 @@ type Transaction struct {
  */
 
 func NewCoinBaseTransaction(address string) *Transaction {
-	txInput := &TxInput{[]byte{}, -1, nil,nil}
+	txInput := &TxInput{[]byte{}, -1, nil, nil}
 	txOutput := NewTxOutput(10, address)
 	txCoinBaseTransaction := &Transaction{[]byte{}, []*TxInput{txInput}, []*TxOutput{txOutput}}
 	//设置交易ID
@@ -66,38 +58,45 @@ func NewSimpleTransaction(from, to string, amount int64, bc *BlockChain, txs []*
 	var txInputs []*TxInput
 	var txOuputs [] *TxOutput
 
-	//2.//获取本次转账要使用output
-	balance, spendUtxo := bc.FindSpentAbleUTXos(from, amount, txs)
+	//2.创建Input
+
+	//获取本次转账要使用output
+	total, spentableUTXO := bc.FindSpentableUTXOs(from, amount, txs) //map[txID]-->[]int{index}
 
 	//获取钱包的集合：
 	wallets := NewWallets()
 	wallet := wallets.WalletMap[from]
 
-	for txID, indexArray := range spendUtxo {
-		txIdBytes,_ := hex.DecodeString(txID)
-		for _, index :=  range indexArray  {
-			txinput := &TxInput{txIdBytes, index, nil, wallet.PublickKey}
-			txInputs = append(txInputs, txinput)
+	for txID, indexArray := range spentableUTXO {
+		txIDBytes, _ := hex.DecodeString(txID)
+		for _, index := range indexArray {
+			txInput := &TxInput{txIDBytes, index, nil, wallet.PublickKey}
+			txInputs = append(txInputs, txInput)
 		}
 	}
 
 	//3.创建Output
 
 	//转账
+	//txOutput := &TxOutput{amount, to}
 	txOutput := NewTxOutput(amount, to)
 	txOuputs = append(txOuputs, txOutput)
 
 	//找零
-	txOutput2 := NewTxOutput(balance - amount, from)
+	//txOutput2 := &TxOutput{total - amount, from}
+	txOutput2 := NewTxOutput(total-amount, from)
 	txOuputs = append(txOuputs, txOutput2)
+
 	//创建交易
 	tx := &Transaction{[]byte{}, txInputs, txOuputs}
 
 	//设置交易的ID
 	tx.SetID()
 
+
 	//设置签名
 	bc.SignTrasanction(tx,wallet.PrivateKey)
+
 
 	return tx
 
@@ -108,7 +107,6 @@ func (tx *Transaction) IsCoinBaseTransaction() bool {
 
 	return len(tx.Vins[0].TxID) == 0 && tx.Vins[0].Vout == -1
 }
-
 
 //签名
 /*
@@ -132,7 +130,7 @@ func (tx *Transaction) Sign(privateKey ecdsa.PrivateKey, prevTxsmap map[string]*
 	//即将进行签名:私钥，要签名的数据
 	txCopy := tx.TrimmedCopy()
 
-	for index, input := range tx.Vins {
+	for index, input := range txCopy.Vins {
 		// input--->5566
 
 		prevTx := prevTxsmap[hex.EncodeToString(input.TxID)]
@@ -140,6 +138,8 @@ func (tx *Transaction) Sign(privateKey ecdsa.PrivateKey, prevTxsmap map[string]*
 		txCopy.Vins[index].Signature = nil                                 //仅仅是一个双重保险，保证签名一定为空
 		txCopy.Vins[index].PublicKey = prevTx.Vouts[input.Vout].PubKeyHash //设置input中的publickey为对应的output的公钥哈希
 
+
+		txCopy.TxID = txCopy.NewTxID()//产生要签名的数据：
 
 		//为了方便下一个input，将数据再置为空
 		txCopy.Vins[index].PublicKey = nil
@@ -157,7 +157,7 @@ func (tx *Transaction) Sign(privateKey ecdsa.PrivateKey, prevTxsmap map[string]*
 		r + s--->sign
 		input.Signatrue = sign
 	 */
-		r,s,err:=ecdsa.Sign(rand.Reader, &privateKey, txCopy.NewTxID() )
+		r,s,err:=ecdsa.Sign(rand.Reader, &privateKey, txCopy.TxID )
 		if err != nil{
 			log.Panic(err)
 		}
@@ -291,7 +291,7 @@ func (tx *Transaction) Verifity(prevTxs map[string]*Transaction)bool{
 		signLen:=len(input.Signature)
 		r.SetBytes(input.Signature[:signLen/2])
 		s.SetBytes(input.Signature[signLen/2:])
-		fmt.Println(rawPublicKey, txCopy.TxID)
+
 		if ecdsa.Verify(&rawPublicKey,txCopy.TxID,&r,&s) == false{
 			return false
 		}

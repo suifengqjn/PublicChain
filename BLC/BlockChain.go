@@ -1,35 +1,37 @@
 package BLC
 
 import (
-	"math/big"
 	"github.com/boltdb/bolt"
 	"os"
 	"fmt"
 	"log"
+	"math/big"
 	"time"
-	"encoding/hex"
 	"strconv"
-	"bytes"
+	"encoding/hex"
 	"crypto/ecdsa"
+	"bytes"
 )
 
-
-var blockChain *BlockChain
-
-//区块链
+//定义一个区块链
 type BlockChain struct {
-	DB        *bolt.DB //存放区块的数据库  (hash ==> block)
-	LastBlockHash []byte   //最新区块的hash
+	//Blocks []*Block
+	DB  *bolt.DB //对应的数据库对象
+	Tip [] byte  //存储区块中最后一个块的hash值
 }
 
 //创建一个区块链，包含创世区块
+/*
+1.数据库存储，创世区块已经存在，直接返回
+2.数据库不存在，创建创世区块，存入到数据库中
+ */
 func CreateBlockChainWithGenesisBlock(address string) {
 
 	/*
 	1.判断数据库如果存在，直接结束方法
 	2.数据库不存在，创建创世区块，并存入到数据库中
 	 */
-	if dbExists(){
+	if dbExists() {
 		fmt.Println("数据库已经存在，无法创建创世区块。。")
 		return
 	}
@@ -41,15 +43,14 @@ func CreateBlockChainWithGenesisBlock(address string) {
 	1.创建创世区块
 	2.存入到数据库中
 	 */
-
 	//创建一个txs--->CoinBase
-	txCoinbase := NewCoinBaseTransaction(address)
-	genesisBlock := CreateGenesisBlock([]*Transaction{txCoinbase})
+	txCoinBase := NewCoinBaseTransaction(address)
+
+	genesisBlock := CreateGenesisBlock([]*Transaction{txCoinBase})
 	db, err := bolt.Open(DBName, 0600, nil)
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Println(txCoinbase.Vouts)
 	err = db.Update(func(tx *bolt.Tx) error {
 		//创世区块序列化后，存入到数据库中
 		b, err := tx.CreateBucketIfNotExists([]byte(BlockBucketName))
@@ -69,61 +70,58 @@ func CreateBlockChainWithGenesisBlock(address string) {
 	if err != nil {
 		log.Panic(err)
 	}
-
-
+	//return &BlockChain{db, genesisBlock.Hash}
 }
 
+/*
+//添加区块到区块链中
+func (bc *BlockChain) AddBlockToBlockChain(txs []*Transaction) {
+	//1.根据参数的数据，创建Block
+	//newBlock := NewBlock(data, prevBlockHash, height)
+	//2.将block加入blockchain
+	//bc.Blocks = append(bc.Blocks, newBlock)
 
-//提供一个方法：当前区块hash的有效性
-func (bc *BlockChain) isValid(block *Block) bool {
+	//1.操作bc对象，获取DB
+	//2.创建新的区块
+	//3.序列化后存入到数据库中
 
-	//if block.Height-1 != blockChain.LastBlock.Height { //验证高度合法性
-	//	return false
-	//}
-	//
-	//if block.TimeStamp <= blockChain.LastBlock.TimeStamp { //验证时间戳合法性
-	//	return false
-	//}
+	err := bc.DB.Update(func(tx *bolt.Tx) error {
+		//打开bucket
+		b := tx.Bucket([]byte(BlockBucketName))
+		if b != nil {
+			//获取bc的Tip就是最新hash，从数据库中读取最后一个block：hash，height
+			blockByets := b.Get(bc.Tip)
+			lastBlock := DeserializeBlock(blockByets) //数据库中的最后一个区块
+			//创建新的区块
+			newBlock := NewBlock(txs, lastBlock.Hash, lastBlock.Height+1)
+			//序列化后存入到数据库中
+			err := b.Put(newBlock.Hash, newBlock.Serialize())
+			if err != nil {
+				log.Panic(err)
+			}
 
-	hashInt := new(big.Int)
-	hashInt.SetBytes(block.Hash)
+			//更新：bc的tip，以及数据库中l的值
+			b.Put([]byte("l"), newBlock.Hash)
+			bc.Tip = newBlock.Hash
 
-	target := big.NewInt(1)
-	target = target.Lsh(target, 256-TargetBit)
-	if hashInt.Cmp(target) != -1 { //验证hash合法性
-		return false
+		}
+
+		return nil
+	})
+	if err != nil {
+		log.Panic(err)
 	}
-
-	return true
-
 }
-
-//判断数据库文件是否存在
+*/
+//提供一个方法，用于判断数据库是否存在
 func dbExists() bool {
 	if _, err := os.Stat(DBName); os.IsNotExist(err) {
 		return false
-	} else {
-		return true
 	}
+	return true
 }
 
-//判断bucket是否存在
-func bucketExits(DB *bolt.DB) bool  {
-
-	var exits bool
-	DB.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte(BlockBucketName))
-		if bucket != nil {
-			exits = true
-		} else {
-			exits =false
-		}
-		return nil
-	})
-	return exits
-}
-
-
+//新增方法，用于遍历数据库，打印所有的区块
 func (bc *BlockChain) PrintChains() {
 	/*
 	.bc.DB.View(),
@@ -143,6 +141,7 @@ func (bc *BlockChain) PrintChains() {
 		fmt.Printf("\t高度：%d\n", block.Height)
 		fmt.Printf("\t上一个区块Hash：%x\n", block.PrevBlockHash)
 		fmt.Printf("\t自己的Hash：%x\n", block.Hash)
+		//fmt.Printf("\t数据：%s\n", block.Data)
 		fmt.Println("\t交易信息：")
 		for _, tx := range block.Txs {
 			fmt.Printf("\t\t交易ID：%x\n", tx.TxID) //[]byte
@@ -150,20 +149,23 @@ func (bc *BlockChain) PrintChains() {
 			for _, in := range tx.Vins { //每一个TxInput：Txid，vout，解锁脚本
 				fmt.Printf("\t\t\tTxID:%x\n", in.TxID)
 				fmt.Printf("\t\t\tVout:%d\n", in.Vout)
-				fmt.Printf("\t\t\tSignature:%s\n", in.Signature)
-				fmt.Printf("\t\t\tPublicKey:%s\n", in.PublicKey)
+				//fmt.Printf("\t\t\tScriptSiq:%s\n", in.ScriptSiq)
+				fmt.Printf("\t\t\tsign:%v\n",in.Signature)
+				fmt.Printf("\t\t\tPublicKey:%v\n",in.PublicKey)
 			}
 			fmt.Println("\t\tVouts:")
 			for _, out := range tx.Vouts { //每个以txOutput:value,锁定脚本
 				fmt.Printf("\t\t\tValue:%d\n", out.Value)
-				fmt.Printf("\t\t\tPubKeyHash:%s\n", out.PubKeyHash)
+				//fmt.Printf("\t\t\tScriptPubKey:%s\n", out.ScriptPubKey)
+				fmt.Printf("\t\t\tPubKeyHash:%v\n",out.PubKeyHash)
 			}
 		}
+
 		fmt.Printf("\t随机数：%d\n", block.Nonce)
 		//fmt.Printf("\t时间：%d\n", block.TimeStamp)
 		fmt.Printf("\t时间：%s\n", time.Unix(int64(block.TimeStamp), 0).Format("2006-01-02 15:04:05")) // 时间戳-->time-->Format("")
 
-		//step2：判断block的prevBlcokhash为0,表示该block是创世取块，将结束循环
+		//step2：判断block的prevBlcokhash为0,表示该block是创世取块，将诶数循环
 		hashInt := new(big.Int)
 		hashInt.SetBytes(block.PrevBlockHash)
 		if big.NewInt(0).Cmp(hashInt) == 0 {
@@ -181,12 +183,11 @@ func (bc *BlockChain) PrintChains() {
 
 //获取blockchainiterator的对象
 func (bc *BlockChain) Iterator() *BlockChainIterator {
-	return &BlockChainIterator{bc.DB, bc.LastBlockHash}
+	return &BlockChainIterator{bc.DB, bc.Tip}
 }
 
-
 //提供一个函数，专门用于获取BlockChain对象
-func GetBlockChainObject() *BlockChain{
+func GetBlockChainObject() *BlockChain {
 	/*
 		1.数据库存在，读取数据库，返回blockchain即可
 		2.数据库 不存储，返回nil
@@ -216,13 +217,11 @@ func GetBlockChainObject() *BlockChain{
 			log.Panic(err)
 		}
 		return blockchain
-	}else{
+	} else {
 		fmt.Println("数据库不存在，无法获取BlockChain对象。。。")
-		return  nil
+		return nil
 	}
 }
-
-
 
 //新增功能：通过转账，创建区块
 func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
@@ -237,21 +236,24 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 	//fmt.Println(to)
 	//fmt.Println(amount)
 	//1.新建交易
-
 	var txs [] *Transaction
 
-	for i := 0;i < len(from);i++ {
+	for i := 0; i < len(from); i++ {
 		//amount[0]-->int
-		if v, _ :=strconv.Atoi(amount[i]); v <= 0 {
-			fmt.Println(from[i], "余额不合法")
-			os.Exit(1)
-		}
 		amountInt, _ := strconv.ParseInt(amount[i], 10, 64)
-		tx := NewSimpleTransaction(from[i], to[i], amountInt, bc, txs)
+		tx := NewSimpleTransaction(from[i], to[i], amountInt, bc,txs)
 		txs = append(txs, tx)
-	}
 
-	//验证交易
+	}
+	/*
+	分析：循环第一次：i=0
+		txs[transaction1, ]
+		循环第二次：i=1
+		txs [transaction1, transaction2]
+	 */
+
+
+	//交易的验证：
 	for _,tx:=range txs{
 		if bc.VerifityTransaction(tx) == false{
 			log.Panic("数字签名验证失败。。。")
@@ -259,13 +261,16 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 
 	}
 
+
+
+
 	//2.新建区块
 	newBlock := new(Block)
 	err := bc.DB.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(BlockBucketName))
 		if b != nil {
 			//读取数据库
-			blockBytes := b.Get(bc.LastBlockHash)
+			blockBytes := b.Get(bc.Tip)
 			lastBlock := DeserializeBlock(blockBytes)
 
 			newBlock = NewBlock(lastBlock.Height+1,txs, lastBlock.Hash)
@@ -286,7 +291,7 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 			//更新l
 			b.Put([]byte("l"), newBlock.Hash)
 			//tip
-			bc.LastBlockHash = newBlock.Hash
+			bc.Tip = newBlock.Hash
 		}
 
 		return nil
@@ -297,10 +302,12 @@ func (bc *BlockChain) MineNewBlock(from, to, amount []string) {
 }
 
 //提供一个功能：查询余额
-func (bc *BlockChain) GetBalance(address string) int64 {
-	unSpendUTXOs := bc.UnSpent(address,[]*Transaction{})
+func (bc *BlockChain) GetBalance(address string,txs[] *Transaction) int64 {
+	//txOutputs := bc.UnSpent(address)
+	unSpentUTXOs := bc.UnSpent(address,txs)
+
 	var total int64
-	for _, utxo := range unSpendUTXOs {
+	for _, utxo := range unSpentUTXOs {
 		total += utxo.Output.Value
 	}
 	return total
@@ -312,15 +319,17 @@ func (bc *BlockChain) GetBalance(address string) int64 {
 UTXO模型：未花费的交易输出
 	Unspent Transaction TxOutput
  */
-func (bc *BlockChain) UnSpent(address string, txs []*Transaction) []*UTXO {//王二狗
+func (bc *BlockChain) UnSpent(address string, txs [] *Transaction) []*UTXO { //王二狗
 	/*
+	0.查询本次转账已经创建了的哪些transaction
+
 	1.遍历数据库，获取每个block--->Txs
 	2.遍历所有交易：
 		Inputs，---->将数据，记录为已经花费
 		Outputs,---->每个output
 	 */
 	//存储未花费的TxOutput
-	var unSpentUTXOs []*UTXO
+	var unSpentUTXOs [] *UTXO
 	//存储已经花费的信息
 	spentTxOutputMap := make(map[string][]int) // map[TxID] = []int{vout}
 
@@ -329,15 +338,22 @@ func (bc *BlockChain) UnSpent(address string, txs []*Transaction) []*UTXO {//王
 		unSpentUTXOs = caculate(txs[i],address,spentTxOutputMap,unSpentUTXOs)
 	}
 
-	it := bc.Iterator()
+
+
 	//第二部分：数据库里的Trasacntion
+
+	it := bc.Iterator()
+
 	for {
 		//1.获取每个block
 		block := it.Next()
 		//2.遍历该block的txs
+		//for _, tx := range block.Txs {
+		//倒序遍历Transaction
 		for i := len(block.Txs) - 1; i >= 0; i-- {
 			unSpentUTXOs = caculate(block.Txs[i],address,spentTxOutputMap,unSpentUTXOs)
 		}
+
 		//3.判断推出
 		hashInt := new(big.Int)
 		hashInt.SetBytes(block.PrevBlockHash)
@@ -351,7 +367,6 @@ func (bc *BlockChain) UnSpent(address string, txs []*Transaction) []*UTXO {//王
 }
 
 
-
 func caculate(tx *Transaction,address string, spentTxOutputMap map[string][]int,unSpentUTXOs []*UTXO) []*UTXO{
 	//遍历每个tx：txID，Vins，Vouts
 
@@ -359,7 +374,11 @@ func caculate(tx *Transaction,address string, spentTxOutputMap map[string][]int,
 	if !tx.IsCoinBaseTransaction() { //tx不是CoinBase交易，遍历TxInput
 		for _, txInput := range tx.Vins {
 			//txInput-->TxInput
-			if txInput.UnlockWithAddress([]byte(address)) {
+			full_payload:=Base58Decode([]byte(address))
+
+			pubKeyHash:=full_payload[1:len(full_payload)-addressCheckSumLen]
+
+			if txInput.UnlockWithAddress(pubKeyHash) {
 				//txInput的解锁脚本(用户名) 如果和钥查询的余额的用户名相同，
 				key := hex.EncodeToString(txInput.TxID)
 				spentTxOutputMap[key] = append(spentTxOutputMap[key], txInput.Vout)
@@ -409,33 +428,41 @@ outputs:
 
 
 
-//用于一次转账的交易中，可以使用的utxo
-func (bc *BlockChain) FindSpentAbleUTXos(from string, amount int64, txs []*Transaction) (int64, map[string][]int)  {
+/*
+提供一个方法，用于一次转账的交易中，可以使用为花费的utxo
+ */
+func (bc *BlockChain) FindSpentableUTXOs(from string, amount int64,txs[]*Transaction) (int64, map[string][]int) {
 	/*
- 	1.根据from获取到的所有的utxo
- 	2.遍历utxos，累加余额，判断，是否如果余额，大于等于要要转账的金额，
+	1.根据from获取到的所有的utxo
+	2.遍历utxos，累加余额，判断，是否如果余额，大于等于要要转账的金额，
 
 
- 	返回：map[txID] -->[]int{下标1，下标2} --->Output
- 	 */
-
- 	 var balance int64
- 	 spentAbleMap := make(map[string][]int)
- 	 utxos := bc.UnSpent(from, txs)
- 	 for _, utxo := range utxos {
- 	 	balance += utxo.Output.Value
- 	 	txIDStr := hex.EncodeToString(utxo.TxID)
- 	 	spentAbleMap[txIDStr] = append(spentAbleMap[txIDStr], utxo.Index)
-		 if balance >= amount {
-
-		 }
+	返回：map[txID] -->[]int{下标1，下标2} --->Output
+	 */
+	var total int64
+	spentableMap := make(map[string][]int)
+	//1.获取所有的utxo ：10
+	utxos := bc.UnSpent(from,txs)
+	//2.找即将使用utxo：3个utxo
+	for _, utxo := range utxos {
+		total += utxo.Output.Value
+		txIDstr := hex.EncodeToString(utxo.TxID)
+		spentableMap[txIDstr] = append(spentableMap[txIDstr], utxo.Index)
+		if total >= amount {
+			break
+		}
 	}
-	if balance < amount {
-		 fmt.Println(from, "余额不足")
-		 os.Exit(1)
+
+	//3.
+	if total < amount {
+		fmt.Printf("%s,余额不足，无法转账。。\n", from)
+		os.Exit(1)
 	}
-	return balance, spentAbleMap
+
+	return total, spentableMap
+
 }
+
 
 //签名：
 func (bc *BlockChain) SignTrasanction(tx *Transaction,privateKey ecdsa.PrivateKey){
@@ -455,6 +482,7 @@ func (bc *BlockChain) SignTrasanction(tx *Transaction,privateKey ecdsa.PrivateKe
 	tx.Sign(privateKey,prevTxs)
 
 }
+
 
 //根据交易ID，获取对应的交易对象
 func (bc *BlockChain) FindTransactionByTxID(txID []byte) *Transaction{
@@ -493,4 +521,3 @@ func (bc *BlockChain) VerifityTransaction(tx *Transaction) bool{
 	//验证
 	return  tx.Verifity(prevTxs)
 }
-

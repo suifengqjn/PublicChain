@@ -13,3 +13,5 @@
 
 #golang
 *.xml
+*.bat
+*.db
