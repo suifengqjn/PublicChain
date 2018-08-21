@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"bytes"
 	"encoding/gob"
-	"crypto/elliptic"
 	"log"
+	"crypto/elliptic"
 	"io/ioutil"
 	"os"
 )
 
-const walletsFile = "Wallets.dat"//存储钱包数据的本地文件名
+const walletsFile = "Wallets_%s.dat"//存储钱包数据的本地文件名
+
 
 //定义一个钱包的集合，存储多个钱包对象
 type Wallets struct {
@@ -18,10 +19,22 @@ type Wallets struct {
 }
 
 //提供一个函数，用于创建一个钱包的集合
-func NewWallets() *Wallets{
+/*
+思路：修改该方法：
+	读取本地的钱包文件，如果文件存在，直接获取
+	如果文件不存在，创建钱包对象
+ */
+func NewWallets(nodeID string) *Wallets{
 	//wallerts:=&Wallets{}
 	//wallerts.WalletMap = make(map[string]*Wallet)
 	//return wallerts
+
+	/*
+	格式化钱包文件的名字
+
+	 */
+
+	 walletsFile := fmt.Sprintf(walletsFile,nodeID)
 
 	//step1：钱包文件不存在
 	if _, err := os.Stat(walletsFile); os.IsNotExist(err) {
@@ -51,7 +64,7 @@ func NewWallets() *Wallets{
 
 }
 
-func (ws *Wallets) CreateNewWallet(){
+func (ws *Wallets) CreateNewWallet(nodeID string){
 	wallet:=NewWallet()
 
 	address := wallet.GetAddress()
@@ -60,12 +73,17 @@ func (ws *Wallets) CreateNewWallet(){
 	ws.WalletMap[string(address)] = wallet
 
 	//将钱包集合，存入到本地文件中
-	ws.saveFile()
+	ws.saveFile(nodeID)
 }
 
 
 //将钱包对象，存入到本地文件中
-func (ws *Wallets) saveFile(){
+func (ws *Wallets) saveFile(nodeID string){
+
+	//格式化文件名
+	walletsFile:=fmt.Sprintf(walletsFile,nodeID)
+
+
 	//1.将ws对象的数据--->byte[]
 	var buf bytes.Buffer
 	//序列化的过程中：被序列化的对象 中包含了接口，那么将口需要注册
@@ -85,4 +103,3 @@ func (ws *Wallets) saveFile(){
 		log.Panic(err)
 	}
 }
-

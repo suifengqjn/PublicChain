@@ -1,11 +1,11 @@
 package BLC
 
-//Unspent Transaction output
+//UTXO:Unspent Transaction output
 type UTXO struct {
-	// 交易ID
+	//1.该output所在的交易id
 	TxID []byte
-	// output 中的下标
+	//2.该output 的下标
 	Index int
-	//输出
+	//3.output,未花费的
 	Output *TxOutput
 }

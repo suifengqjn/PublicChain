@@ -67,8 +67,22 @@ func (w *Wallet) GetAddress() []byte {
 	 */
 
 	//step1：得到公钥哈希
-	pubKeyHash := PubKeyHash(w.PublickKey)
+	//pubKeyHash := PubKeyHash(w.PublickKey)
+	//
+	//address := GetAddressByPubKeyHash(pubKeyHash)
+	//return address
 
+	return GetAddressByPublicKey(w.PublickKey)
+
+}
+
+func GetAddressByPublicKey(publicKey []byte)[]byte{
+	pubKeyHash:=PubKeyHash(publicKey)
+	return GetAddressByPubKeyHash(pubKeyHash)
+}
+
+
+func GetAddressByPubKeyHash(pubKeyHash []byte) []byte {
 	//step2：添加版本号：
 	versioned_payload := append([]byte{version}, pubKeyHash...)
 
@@ -81,7 +95,6 @@ func (w *Wallet) GetAddress() []byte {
 	//step5：Base58编码
 	address := Base58Encode(full_payload)
 	return address
-
 }
 
 /*

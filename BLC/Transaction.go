@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/elliptic"
 	"math/big"
+	"time"
 )
 
 //定义交易的数据
@@ -30,6 +31,7 @@ type Transaction struct {
 
 func NewCoinBaseTransaction(address string) *Transaction {
 	txInput := &TxInput{[]byte{}, -1, nil, nil}
+	//txOutput := &TxOutput{10, address}
 	txOutput := NewTxOutput(10, address)
 	txCoinBaseTransaction := &Transaction{[]byte{}, []*TxInput{txInput}, []*TxOutput{txOutput}}
 	//设置交易ID
@@ -47,24 +49,34 @@ func (tx *Transaction) SetID() {
 		log.Panic(err)
 	}
 	//2.[]byte-->hash
-	hash := sha256.Sum256(buf.Bytes())
+
+	txBytes:=buf.Bytes()
+
+	allBytes:=bytes.Join([][]byte{txBytes,IntToHex(time.Now().Unix())},[]byte{})
+
+	hash := sha256.Sum256(allBytes)
 	//3.为tx设置ID
 	tx.TxID = hash[:]
 }
 
 //根据转账的信息，创建一个普通的交易
-func NewSimpleTransaction(from, to string, amount int64, bc *BlockChain, txs []*Transaction) *Transaction {
+func NewSimpleTransaction(from, to string, amount int64, utxoSet *UTXOSet, txs []*Transaction,nodeID string) *Transaction {
 	//1.定义Input和Output的数组
 	var txInputs []*TxInput
 	var txOuputs [] *TxOutput
 
 	//2.创建Input
+	/*
+	创世区块中交易ID：c16d3ad93450cd532dcd7ef53d8f396e46b2e59aa853ad44c284314c7b9db1b4
+	 */
 
 	//获取本次转账要使用output
-	total, spentableUTXO := bc.FindSpentableUTXOs(from, amount, txs) //map[txID]-->[]int{index}
+	//total, spentableUTXO := bc.FindSpentableUTXOs(from, amount, txs) //map[txID]-->[]int{index}
+	total, spentableUTXO := utxoSet.FindSpentableUTXOs(from, amount, txs) //map[txID]-->[]int{index}
+
 
 	//获取钱包的集合：
-	wallets := NewWallets()
+	wallets := NewWallets(nodeID)
 	wallet := wallets.WalletMap[from]
 
 	for txID, indexArray := range spentableUTXO {
@@ -74,6 +86,11 @@ func NewSimpleTransaction(from, to string, amount int64, bc *BlockChain, txs []*
 			txInputs = append(txInputs, txInput)
 		}
 	}
+
+	//idBytes, _ := hex.DecodeString("c16d3ad93450cd532dcd7ef53d8f396e46b2e59aa853ad44c284314c7b9db1b4")
+	//idBytes, _ := hex.DecodeString("143d7db0d5cce24645edb2ba0b503fe15969ade0c721edfd3578cd731c563a16")
+	//txInput := &TxInput{idBytes, 1, from}
+	//txInputs = append(txInputs, txInput)
 
 	//3.创建Output
 
@@ -95,7 +112,7 @@ func NewSimpleTransaction(from, to string, amount int64, bc *BlockChain, txs []*
 
 
 	//设置签名
-	bc.SignTrasanction(tx,wallet.PrivateKey)
+	utxoSet.BlockChian.SignTrasanction(tx,wallet.PrivateKey,txs)
 
 
 	return tx
@@ -255,7 +272,7 @@ func (tx *Transaction) Verifity(prevTxs map[string]*Transaction)bool{
 		 */
 		//ecdsa.Verify()
 
-		//获取要签名的数据
+	//获取要签名的数据
 		prevTx:=prevTxs[hex.EncodeToString(input.TxID)]
 
 		txCopy.Vins[index].Signature = nil
